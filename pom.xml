@@ -8,6 +8,7 @@
     <modules>
         <module>SprocketMC-API</module>
         <module>SprocketMC</module>
+        <module>SprocketProxy</module>
     </modules>
     <dependencies>
         <dependency>
