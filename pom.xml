@@ -10,11 +10,22 @@
         <module>Sprocket</module>
         <module>SprocketProxy</module>
     </modules>
+    <repositories>
+        <repository>
+            <id>Sprocket</id>
+            <url>https://repo.sprocketmc.net</url>
+        </repository>
+    </repositories>
     <dependencies>
         <dependency>
             <groupId>org.spigotmc</groupId>
             <artifactId>spigot-api</artifactId>
             <version>1.15.2-R0.1-SNAPSHOT</version>
+        </dependency>
+        <dependency>
+            <groupId>${project.groupId}</groupId>
+            <artifactId>MinecraftServer</artifactId>
+            <version>1.16-SNAPSHOT</version>
         </dependency>
     </dependencies>
     <properties>
