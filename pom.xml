@@ -6,8 +6,8 @@
     <version>1.0-SNAPSHOT</version>
     <packaging>pom</packaging>
     <modules>
-        <module>SprocketMC-API</module>
-        <module>SprocketMC</module>
+        <module>Sprocket-API</module>
+        <module>Sprocket</module>
         <module>SprocketProxy</module>
     </modules>
     <dependencies>
