@@ -1,0 +1,238 @@
+plugins {
+    id 'java'
+}
+
+group 'org.example'
+version '0.1-SNAPSHOT'
+
+repositories {
+    mavenCentral()
+    maven {
+        url 'https://maven.fabricmc.net/'
+    }
+}
+
+dependencies {
+    testCompile group: 'junit', name: 'junit', version: '4.12'
+}
+
+// Begin Sprocket setup & build scripts
+def MC_VERSION = '1.15.2'
+def SPECIAL_SOURCE_VERSION = '1.8.6'
+
+
+
+import groovy.json.JsonSlurper
+
+import java.util.function.Predicate
+import java.util.zip.ZipEntry
+import java.util.zip.ZipFile
+import java.util.zip.ZipInputStream
+import java.util.zip.ZipOutputStream
+
+// Define utility methods
+static def download(URL remote, File local) {
+    if(!local.getParentFile().exists()) local.getParentFile().mkdirs()
+    local.withOutputStream { out ->
+        remote.withInputStream { from -> out << from }
+    }
+}
+
+static def verifyResource(URL remote, String filename, String name) {
+    def local = new File("work/${filename}")
+    if (!local.exists()) {
+        println("Downloading ${name}...")
+        download(remote, local)
+    }
+}
+
+static def extract(File source, String destination, Predicate<String> accepts) {
+    File destFile = new File(destination)
+    if (!destFile.exists()) destFile.mkdirs()
+    ZipInputStream zipIn = new ZipInputStream(new FileInputStream(source))
+    ZipEntry entry
+    while ((entry = zipIn.getNextEntry()) != null) {
+        if (!accepts.test(entry.getName())) continue
+
+        String filePath = destination + File.separator + entry.getName()
+        if (!entry.isDirectory()) {
+            extractFile(zipIn, filePath)
+        } else {
+            (new File(filePath)).mkdirs()
+        }
+        zipIn.closeEntry()
+    }
+    zipIn.close()
+}
+
+static def extractFile(ZipInputStream zipIn, String filePath) throws IOException {
+    File dest = new File(filePath);
+    if (!dest.getParentFile().exists()) dest.getParentFile().mkdirs()
+    BufferedOutputStream bos = new BufferedOutputStream(new FileOutputStream(dest))
+    byte[] bytesIn = new byte[4096]
+    int read
+    while ((read = zipIn.read(bytesIn)) != -1) {
+        bos.write(bytesIn, 0, read)
+    }
+    bos.close()
+}
+
+static def copyFilter(File source, File destination, Predicate<String> filter) {
+    ZipFile zFile = new ZipFile(source)
+    ZipOutputStream zOut = new ZipOutputStream(new FileOutputStream(destination))
+
+    Enumeration<ZipEntry> entries = zFile.entries();
+    while (entries.hasMoreElements()) {
+        ZipEntry entry = entries.nextElement()
+        if(!filter.test(entry.getName())) continue
+
+        ZipEntry newEntry = new ZipEntry(entry.getName())
+        zOut.putNextEntry(newEntry)
+
+        BufferedInputStream bis = new BufferedInputStream(zFile.getInputStream(entry))
+        while(bis.available() > 0) {
+            zOut.write(bis.read())
+        }
+        bis.close()
+
+        zOut.closeEntry()
+    }
+    zOut.finish()
+    zOut.close()
+    zFile.close()
+}
+
+// Define procedure methods
+static def prepareDecomp(String specialSourceVersion) {
+    // Download Fernflower
+    // TODO: This URL does not work.
+    verifyResource("https://the.bytecode.club/fernflower.jar".toURL(), "fernflower.jar", "Fernflower")
+    // Download SpecialSource
+    verifyResource(
+            ("https://hub.spigotmc.org/nexus/service/local/repositories/central/content/net/md-5/SpecialSource/${specialSourceVersion}/SpecialSource-${specialSourceVersion}.jar").toURL(),
+            "specialsource.jar",
+            "SpecialSource"
+    )
+    //Download SpecialSource's dependencies
+    new File("work/libs").mkdirs()
+    verifyResource(
+            "https://repo1.maven.org/maven2/org/ow2/asm/asm/7.3.1/asm-7.3.1.jar".toURL(),
+            "libs/asm.jar",
+            "SpecialSource (Lib: ASM)"
+    )
+    verifyResource(
+            "https://repo1.maven.org/maven2/org/ow2/asm/asm-commons/7.3.1/asm-commons-7.3.1.jar".toURL(),
+            "libs/asm-commons.jar",
+            "SpecialSource (Lib: ASM)"
+    )
+    verifyResource(
+            "https://repo1.maven.org/maven2/org/ow2/asm/asm-tree/7.3.1/asm-tree-7.3.1.jar".toURL(),
+            "libs/asm-tree.jar",
+            "SpecialSource (Lib: ASM)"
+    )
+    verifyResource(
+            "https://repo1.maven.org/maven2/org/projectlombok/lombok/1.18.4/lombok-1.18.4.jar".toURL(),
+            "libs/lombok.jar",
+            "SpecialSource (Lib: Lombok)"
+    )
+    verifyResource(
+            "https://repo1.maven.org/maven2/net/sf/jopt-simple/jopt-simple/4.9/jopt-simple-4.9.jar".toURL(),
+            "libs/joptsimple.jar",
+            "SpecialSource (Lib: JOptSimple)"
+    )
+    verifyResource(
+            "https://repo1.maven.org/maven2/com/google/guava/guava/20.0/guava-20.0.jar".toURL(),
+            "libs/guava.jar",
+            "SpecialSource (Lib: Guava)"
+    )
+    verifyResource(
+            "https://repo1.maven.org/maven2/com/opencsv/opencsv/4.4/opencsv-4.4.jar".toURL(),
+            "libs/opencsv.jar",
+            "SpecialSource (Lib: OpenCSV)"
+    )
+}
+
+task setupMC {
+
+    doLast {
+        // --- DOWNLOAD SERVER AND ITS MAPPINGS ---
+        def serverJar = new File('work/server-' + MC_VERSION + '-original.jar')
+        def serverMap = new File('work/server-' + MC_VERSION + '-mappings.txt')
+
+        // Query the server for the versions and pull the server URL and its mappings URL
+        if (!serverJar.exists() || !serverMap.exists()) {
+            println('Querying server for version ' + MC_VERSION + '...')
+            def versionURL = 'https://launchermeta.mojang.com/mc/game/version_manifest.json'.toURL()
+            def versionJson = new JsonSlurper().parseText(versionURL.text)
+            for (Object o : versionJson.versions) {
+                if (o.id == MC_VERSION) {
+                    versionURL = ((String) o.url).toURL()
+                    break
+                }
+            }
+            versionJson = new JsonSlurper().parseText(versionURL.text)
+            def serverURL = ((String) versionJson.downloads.server.url).toURL()
+            def mappingsURL = ((String) versionJson.downloads.server_mappings.url).toURL()
+
+            // Download the jar and the mappings to the utils directory
+            if (!serverJar.exists()) {
+                println('Downloading server...')
+                download(serverURL, serverJar)
+            }
+            if (!serverMap.exists()) {
+                println('Downloading mappings...')
+                download(mappingsURL, serverMap)
+            }
+        }
+
+        // Prepare to decompile
+        println('Downloading toolkit...')
+        prepareDecomp(SPECIAL_SOURCE_VERSION)
+
+        // Refactor mappings
+        println('Transforming mappings...')
+        def trfProc = "java -jar ./work/mapping-transformer.jar work/server-${MC_VERSION}-mappings.txt work/server-${MC_VERSION}-mappings.tsrg".execute()
+        trfProc.consumeProcessOutput(System.out, System.err)
+        trfProc.waitFor()
+
+        // Apply mappings
+        println('Applying mappings...')
+        def mapCmd = ("java -cp ./work/specialsource.jar:./work/libs/* net.md_5.specialsource.SpecialSource " +
+                "-i ./work/server-${MC_VERSION}-original.jar " +
+                "-o ./work/server-${MC_VERSION}-mapped.jar " +
+                "-m ./work/server-${MC_VERSION}-mappings.tsrg " +
+                "--kill-lvt")
+        def mapProc = mapCmd.execute()
+        mapProc.consumeProcessOutput(System.out, System.err)
+        mapProc.waitFor()
+
+        // Eliminate unneeded files
+        println('Stripping unnecessary classes...')
+        copyFilter(new File("work/server-${MC_VERSION}-mapped.jar"), new File("work/server-${MC_VERSION}-stripped.jar"), new Predicate<String>() {
+            @Override
+            boolean test(String s) {
+                return s.contains("net/minecraft") || s.contains("com/mojang")
+            }
+        })
+
+        // Run Fernflower on the Minecraft jars
+//        println('Decompiling Minecraft...')
+//        new File("work" + File.separator + "output").mkdirs()
+//        def decProc = "java -jar ./work/fernflower.jar -dgs=1 -ren=1 -lit=1 -asc=1 -log=INFO work/server-${MC_VERSION}-stripped.jar work/output/".execute()
+//        decProc.consumeProcessOutput(System.out, System.err)
+//        decProc.waitFor()
+//
+//        // Extract the ZIP
+//        println('Extracting output into src folder...')
+//        extract(new File("work/output/server-${MC_VERSION}-stripped.jar"), "Sprocket-Server/src/main/java", new Predicate<String>() {
+//            @Override
+//            boolean test(String s) {
+//                return s.contains("net/minecraft")
+//            }
+//        })
+        println('Decompiling Minecraft...')
+        def decProc = "java -jar ./work/cfr.jar ./work/server-${MC_VERSION}-stripped.jar --outputdir Sprocket-Server/src/main/java".execute()
+        decProc.consumeProcessOutput(System.out, System.err)
+        decProc.waitFor()
+    }
+}

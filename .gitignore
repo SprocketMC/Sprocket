@@ -1,3 +1,6 @@
+# Prevent Minecraft code from being uploaded to repository
+work/
+Sprocket-Server/
 
 # Created by https://www.gitignore.io/api/eclipse,git,gradle,intellij+all,java,java-web,jetbrains+all,kotlin,m2e,maven,netbeans,linux,macos,osx,svn,visualstudio,visualstudiocode,windows
 # Edit at https://www.gitignore.io/?templates=eclipse,git,gradle,intellij+all,java,java-web,jetbrains+all,kotlin,m2e,maven,netbeans,linux,macos,osx,svn,visualstudio,visualstudiocode,windows

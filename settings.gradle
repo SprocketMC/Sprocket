@@ -1,0 +1,5 @@
+rootProject.name = 'Sprocket'
+include 'Sprocket-API'
+include 'Sprocket-Proxy'
+include 'Sprocket-Server'
+
